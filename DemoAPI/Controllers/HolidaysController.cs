@@ -16,8 +16,7 @@ namespace DemoAPI.Controllers
     /// </summary>
     public class HolidaysController : ApiController
     {
-
-        HttpClient client = new HttpClient();
+        readonly HttpClient client = new HttpClient();
 
         //string connectionString = @"Server=tcp:holidaydb.database.windows.net,1433;Initial Catalog=holidayDB;Persist Security Info=False;User ID=sanddrifter;Password=Pranksta1;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;";
         readonly string connectionString = System.Configuration.ConfigurationManager.ConnectionStrings["ConnectionStringName"].ConnectionString;
@@ -317,8 +316,9 @@ namespace DemoAPI.Controllers
                 return "bad date format";
             }
 
-            SqlCommand command = new SqlCommand($"SELECT * FROM [dbo].[DayStatus] WHERE Country='{countryCode}' AND Date='{sqlDate}';", cnn);
-            dynamic jsonObj = new JObject(); 
+            SqlCommand command = new SqlCommand(
+                $"SELECT * FROM [dbo].[DayStatus] WHERE Country='{countryCode}' AND Date='{sqlDate}';", cnn);
+            dynamic jsonObj; //= new JObject(); 
             dynamic dayStatus = new JObject();
 
             using (SqlDataReader reader = command.ExecuteReader())
@@ -470,7 +470,7 @@ namespace DemoAPI.Controllers
 
                     string sqlStr = $"INSERT INTO [dbo].[DaysInARow] ( Country, YearOfHolidays, Streak) VALUES('{countryCode}', '{year}', '{ maxFreeDaysInARow.longestFreeDayStreak}');";
                     SqlCommand command2 = new SqlCommand(sqlStr, cnn2);
-                    int result = command2.ExecuteNonQuery();
+                    command2.ExecuteNonQuery();
                     cnn2.Close();
 
                     return maxFreeDaysInARow;
