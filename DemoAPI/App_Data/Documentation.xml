@@ -481,18 +481,40 @@
             </summary>
             <param name="documentPath">The physical path to XML document.</param>
         </member>
-        <member name="T:DemoAPI.Controllers.PeopleController">
+        <member name="T:DemoAPI.Controllers.HolidaysController">
             <summary>
-            This is where I give information about my people
+            Api about country holidays
             </summary>
         </member>
-        <member name="M:DemoAPI.Controllers.PeopleController.GetFirstNames(System.Int32,System.Int32)">
+        <member name="M:DemoAPI.Controllers.HolidaysController.GetCountries">
             <summary>
-            Gets a first names of all users
+            Returns JSON with supported countries and countrycodes
             </summary>
-            <param name="userId">The unique identifier for this person</param>
-            <param name="age">We want to know how old they are</param>
-            <returns>A list of full names</returns>
+            <returns></returns>
+        </member>
+        <member name="M:DemoAPI.Controllers.HolidaysController.EveryMonthHolidays(System.String,System.Int32)">
+            <summary>
+            Returns every month's holiday of a specific country and year
+            </summary>
+            <param name="countryCode">usually a 3 letter code of a country</param>
+            <param name="year">year of country's holidays</param>
+            <returns></returns>
+        </member>
+        <member name="M:DemoAPI.Controllers.HolidaysController.DayStatus(System.String,System.String)">
+            <summary>
+            Returns if the day is a workday, freeday or a holiday
+            </summary>
+            <param name="date">day-month-year ex.: 25-12-2021</param>
+            <param name="countryCode">usually a 3 letter code of a country</param>
+            <returns></returns>
+        </member>
+        <member name="M:DemoAPI.Controllers.HolidaysController.MaxFreeDaysInARow(System.String,System.String)">
+            <summary>
+            Returns the maximum number of free(free day + holiday) days in a row
+            </summary>
+            <param name="year">year of holidays</param>
+            <param name="countryCode">usually a 3 letter code of a country</param>
+            <returns></returns>
         </member>
         <member name="T:DemoAPI.Models.Person">
             <summary>

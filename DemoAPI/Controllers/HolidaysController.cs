@@ -1,61 +1,102 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
 using System.Net.Http;
 using System.Web.Http;
-using System.IO;
 
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 using System.Text.RegularExpressions;
+using System.Data.SqlClient;
 
 namespace DemoAPI.Controllers
 {
+    /// <summary>
+    /// Api about country holidays
+    /// </summary>
     public class HolidaysController : ApiController
     {
 
         HttpClient client = new HttpClient();
 
+        //string connectionString = @"Server=tcp:holidaydb.database.windows.net,1433;Initial Catalog=holidayDB;Persist Security Info=False;User ID=sanddrifter;Password=Pranksta1;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;";
+        readonly string connectionString = System.Configuration.ConfigurationManager.ConnectionStrings["ConnectionStringName"].ConnectionString;
         private async Task<dynamic> GetJsonOnNet(string url)
         {
             string response = await client.GetStringAsync(url);
-            //System.Diagnostics.Debug.WriteLine(response);
             dynamic json = JsonConvert.DeserializeObject(response);
             return json;
         }
     
+        /// <summary>
+        /// Returns JSON with supported countries and countrycodes
+        /// </summary>
+        /// <returns></returns>
         [Route("api/Holidays/GetCountries/")]
         [HttpGet]
         public  async Task<dynamic> GetCountries()
         {
-            //List<string> output = new List<string>();
-            dynamic countryList = new JObject();
-            countryList.countries = new JArray();
-            System.Diagnostics.Debug.WriteLine("Testing api route api/Holidays/GetCountries/");
+            SqlConnection cnn;
+            cnn = new SqlConnection(connectionString);
+            cnn.Open();
+            SqlCommand command = new SqlCommand("SELECT * FROM Countries;", cnn);
 
-            HolidaysController holidaysController = new HolidaysController();
-            dynamic jsonObj = await holidaysController
-                .GetJsonOnNet("https://kayaposoft.com/enrico/json/v2.0/?action=getSupportedCountries");
+            using (SqlDataReader reader = command.ExecuteReader())
+            {
+                dynamic countryList = new JObject();
+                countryList.countries = new JArray();
 
-            foreach (var country in jsonObj) {
-               // countryList.countries.Add((string)country["fullName"]);
-               countryList.countries.Add(new JArray( (string)country["fullName"], (string)country["countryCode"])  );
+                //if there is data in table, get countries from DB
+                if (reader.Read() == true)
+                {
+                    while (reader.Read())
+                    {
+                        countryList.countries.Add(new JArray(reader.GetValue(0).ToString(), reader.GetValue(1).ToString()));
+                    }
+                }//if table is empty insert data into table
+                else {
+
+                    HolidaysController holidaysController = new HolidaysController();
+                    dynamic jsonObj = await holidaysController
+                        .GetJsonOnNet("https://kayaposoft.com/enrico/json/v2.0/?action=getSupportedCountries");
+
+                    SqlConnection cnn2;
+                    cnn2 = new SqlConnection(connectionString);
+                    cnn2.Open();
+                    SqlCommand command2 = new SqlCommand("SELECT * FROM Countries;", cnn2);
+                    foreach (var country in jsonObj)
+                    {
+                        countryList.countries.Add(new JArray((string)country["fullName"], (string)country["countryCode"]));
+                        command2.CommandText = $"INSERT INTO [dbo].[Countries] (Country, CountryCode) VALUES('{(string)country["fullName"]}', '{(string)country["countryCode"]}');";
+                        
+                        int result = command2.ExecuteNonQuery();
+
+                        // Check Error
+                        if (result < 0) 
+                        {
+                            Console.WriteLine("Error inserting data into Database!"); 
+                        }
+                        cnn2.Close();
+                    }
+                    
+                }
+                cnn.Close();
+                //don't need to serialize since added json formatter in webapiConfig
+                return countryList;
             }
-
-            //don't need to serialize since added json formatter in webapiConfig
-            //string json = JsonConvert.SerializeObject(countryList, Formatting.Indented);
-            
-            return countryList;
         }
 
+
+        /// <summary>
+        /// Returns every month's holiday of a specific country and year
+        /// </summary>
+        /// <param name="countryCode">usually a 3 letter code of a country</param>
+        /// <param name="year">year of country's holidays</param>
+        /// <returns></returns>
         [Route("api/Holidays/EveryMonthHolidays/{countryCode}/{year:int}")]
         [HttpGet]
         public async Task<dynamic> EveryMonthHolidays(string countryCode, int year)
         {
-            //dynamic holidays = new JObject();
             dynamic monthHolidays = new JObject();
             monthHolidays.January = new JArray();
             monthHolidays.February = new JArray();
@@ -70,40 +111,134 @@ namespace DemoAPI.Controllers
             monthHolidays.November = new JArray();
             monthHolidays.December = new JArray();
 
-            System.Diagnostics.Debug.WriteLine("Testing api route api/Holidays/EveryMonthHolidays/");
-
-            System.Diagnostics.Debug.WriteLine(countryCode);
-            System.Diagnostics.Debug.WriteLine(year);
+            SqlConnection cnn;
+            cnn = new SqlConnection(connectionString);
+            cnn.Open();
+            SqlCommand command = new SqlCommand($"SELECT * FROM [dbo].[MonthHolidays] WHERE Country='{countryCode}';", cnn);
 
             HolidaysController holidaysController = new HolidaysController();
-            dynamic jsonObj = await holidaysController
+            dynamic jsonObj;
+
+            using (SqlDataReader reader = command.ExecuteReader())
+            {
+                System.Diagnostics.Debug.WriteLine("inside SqlDataReader");
+                dynamic countryList = new JObject();
+                countryList.countries = new JArray();
+
+                //if there is data in table, get countries from DB
+                if (reader.Read() == true)
+                {
+                    do
+                    {
+                        string monthNumStr = reader.GetValue(2).ToString();
+                        int monthNum = Convert.ToInt32(monthNumStr);
+                        string holidayName = reader.GetValue(3).ToString();
+
+                        switch (monthNum)
+                        {
+                            case 1:
+                                monthHolidays.January.Add(holidayName);
+                                break;
+                            case 2:
+                                // code block
+                                monthHolidays.February.Add(holidayName);
+                                break;
+                            case 3:
+                                // code block
+                                monthHolidays.March.Add(holidayName);
+                                break;
+                            case 4:
+                                // code block
+                                monthHolidays.April.Add(holidayName);
+                                break;
+                            case 5:
+                                // code block
+                                monthHolidays.May.Add(holidayName);
+                                break;
+                            case 6:
+                                // code block
+                                monthHolidays.June.Add(holidayName);
+                                break;
+                            case 7:
+                                // code block
+                                monthHolidays.July.Add(holidayName);
+                                break;
+                            case 8:
+                                // code block
+                                monthHolidays.August.Add(holidayName);
+                                break;
+                            case 9:
+                                // code block
+                                monthHolidays.September.Add(holidayName);
+                                break;
+                            case 10:
+                                // code block
+                                monthHolidays.October.Add(holidayName);
+                                break;
+                            case 11:
+                                // code block
+                                monthHolidays.November.Add(holidayName);
+                                break;
+                            case 12:
+                                // code block
+                                monthHolidays.December.Add(holidayName);
+                                break;
+                            default:
+                                // code block
+                                break;
+                        }
+
+
+                    } while (reader.Read());
+                    return monthHolidays;
+                }//if table is empty insert data into table
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("reader.Read() == true");
+                    //HolidaysController holidaysController = new HolidaysController();
+                    jsonObj = await holidaysController
                .GetJsonOnNet("https://kayaposoft.com/enrico/json/v2.0/?action=getHolidaysForYear&year=" + year.ToString() + "&country=" + countryCode + "&holidayType=public_holiday");
 
-           // dynamic jsonObj = await holidaysController
-            //   .GetJsonOnNet("https://kayaposoft.com/enrico/json/v2.0/?action=getHolidaysForYear&year=2022&country=est&holidayType=public_holiday");
+                    SqlConnection cnn2;
+                    cnn2 = new SqlConnection(connectionString);
+                    cnn2.Open();
+                    
+                    foreach (var holiday in jsonObj)
+                    {
+                        int monthNum = Convert.ToInt32(Convert.ToString(holiday.date["month"]));
+                        string holidayName = holiday.name[1]["text"].ToString();
+                       string sqlStr = $"INSERT INTO [dbo].[MonthHolidays] (Country, MonthNum, Holiday) VALUES('{countryCode}', '{monthNum}', @param);";
+                        SqlCommand command2 = new SqlCommand(sqlStr, cnn2);
+                        command2.Parameters.AddWithValue("@param", holidayName);
 
+                        int result = command2.ExecuteNonQuery();
+
+                        // Check Error
+                        if (result < 0)
+                        {
+                            Console.WriteLine("Error inserting data into Database!");
+                        }
+                        
+                    }
+                    cnn2.Close();
+
+                }
+                cnn.Close();
+            }
+            
+            //jsonObj = await holidaysController
+            //   .GetJsonOnNet("https://kayaposoft.com/enrico/json/v2.0/?action=getHolidaysForYear&year=" + year.ToString() + "&country=" + countryCode + "&holidayType=public_holiday");
 
             foreach (var holiday in jsonObj)
             {
-                //output.Add((string)country["fullName"]);
-                //countryList.countries.Add((string)country["fullName"]);
-               // System.Diagnostics.Debug.WriteLine("month");
-                
                 string monthStr = Convert.ToString(holiday.date["month"]);
-              //  System.Diagnostics.Debug.WriteLine(monthStr);
                 int monthNum = Convert.ToInt32(monthStr);
-                //dynamic jsonObj_ = new JObject();
-                //jsonObj_.name = holiday.name[1]["text"];
-                //jsonObj_.date = holiday.date;
 
-               // dynamic holidayName = holiday.name[1]["text"];
                 dynamic jsonObj_ = holiday.name[1]["text"];
 
                 switch (monthNum)
                 {
                     case 1:
-                        // code block
-                      //  System.Diagnostics.Debug.WriteLine(holiday.name[1]["text"].ToString());
                         monthHolidays.January.Add(jsonObj_);
                         break;
                     case 2:
@@ -156,162 +291,192 @@ namespace DemoAPI.Controllers
                 }
             }
 
-            //don't need to serialize since added json formatter in webapiConfig
-            //string json = JsonConvert.SerializeObject(countryList, Formatting.Indented);
-
             return monthHolidays;
         }
 
+        /// <summary>
+        /// Returns if the day is a workday, freeday or a holiday
+        /// </summary>
+        /// <param name="date">day-month-year ex.: 25-12-2021</param>
+        /// <param name="countryCode">usually a 3 letter code of a country</param>
+        /// <returns></returns>
         [Route("api/Holidays/DayStatus/{date}/{countryCode}")]
         [HttpGet]
         public async Task<dynamic> DayStatus(string date, string countryCode)
         {
+            SqlConnection cnn;
+            cnn = new SqlConnection(connectionString);
+            cnn.Open();
+
+            Regex regex = new Regex(@"(\d{1,2})-(\d{1,2})-(\d{4})");
+            Match match = regex.Match(date);
+            string sqlDate = "";
+            if (match.Success)
+                sqlDate = $"{match.Groups[3].Value}-{match.Groups[2].Value}-{match.Groups[1].Value}";
+            else {
+                return "bad date format";
+            }
+
+            SqlCommand command = new SqlCommand($"SELECT * FROM [dbo].[DayStatus] WHERE Country='{countryCode}' AND Date='{sqlDate}';", cnn);
+            dynamic jsonObj = new JObject(); 
             dynamic dayStatus = new JObject();
-            //dayStatus.January = new JArray();
 
-            HolidaysController holidaysController = new HolidaysController();
-            dynamic jsonObj = await holidaysController
-              .GetJsonOnNet("https://kayaposoft.com/enrico/json/v2.0?action=isWorkDay&date=" + date + "&country="+ countryCode);
-
-
-            //dynamic jsonObj = await holidaysController
-            //  .GetJsonOnNet("https://kayaposoft.com/enrico/json/v2.0?action=isWorkDay&date=30-07-2022&country=hun");
-           
-
-            if (jsonObj["isWorkDay"] == null) 
+            using (SqlDataReader reader = command.ExecuteReader())
             {
-                //return empty json if day is not valid
-                return dayStatus;
-            }
+                dynamic countryList = new JObject();
+                countryList.countries = new JArray();
 
-
-            if (jsonObj["isWorkDay"] == false)
-            {
-                //check if holiday
-                jsonObj = await holidaysController
-                    .GetJsonOnNet("https://kayaposoft.com/enrico/json/v2.0?action=isPublicHoliday&date=" + date + "&country=" + countryCode);
-                if (jsonObj["isPublicHoliday"] == true)
+                //if there is data in table, get countries from DB
+                if (reader.Read() == true)
                 {
-                    dayStatus.dayStatus = "holiday";
-                }
-                else 
-                {
-                    dayStatus.dayStatus = "free day";
-                }
-            }
-            else 
-            {
-                dayStatus.dayStatus = "workday";
-            }
+                    dayStatus.dayStatus = reader.GetValue(3).ToString();
 
-            return dayStatus;
+                    return dayStatus;
+                }//call external api and save data to DB
+                else{
+                    HolidaysController holidaysController = new HolidaysController();
+                    jsonObj = await holidaysController
+                      .GetJsonOnNet("https://kayaposoft.com/enrico/json/v2.0?action=isWorkDay&date=" + date + "&country=" + countryCode);
+
+                    if (jsonObj["isWorkDay"] == null)
+                    {
+                        //return empty json if day is not valid
+                        return dayStatus;
+                    }
+
+                    if (jsonObj["isWorkDay"] == false)
+                    {
+                        //check if holiday
+                        jsonObj = await holidaysController
+                            .GetJsonOnNet("https://kayaposoft.com/enrico/json/v2.0?action=isPublicHoliday&date=" + date + "&country=" + countryCode);
+                        if (jsonObj["isPublicHoliday"] == true)
+                        {
+                            dayStatus.dayStatus = "holiday";
+                        }
+                        else
+                        {
+                            dayStatus.dayStatus = "free day";
+                        }
+                    }
+                    else
+                    {
+                        dayStatus.dayStatus = "workday";
+                    }
+                    SqlConnection cnn2;
+                    cnn2 = new SqlConnection(connectionString);
+                    cnn2.Open();
+
+                    string sqlStr = $"INSERT INTO [dbo].[DayStatus] (Country, Date, Status) VALUES('{countryCode}', '{sqlDate}', '{dayStatus.dayStatus}');";
+                    SqlCommand command2 = new SqlCommand(sqlStr, cnn2);
+                    int result = command2.ExecuteNonQuery();
+                    cnn2.Close();
+
+                    return dayStatus;
+                }
+            }
+            
         }
 
-        [Route("api/Holidays/MaxFreeDaysInARow/{date}/{countryCode}")]
+        /// <summary>
+        /// Returns the maximum number of free(free day + holiday) days in a row
+        /// </summary>
+        /// <param name="year">year of holidays</param>
+        /// <param name="countryCode">usually a 3 letter code of a country</param>
+        /// <returns></returns>
+        [Route("api/Holidays/MaxFreeDaysInARow/{year}/{countryCode}")]
         [HttpGet]
-        public async Task<dynamic> MaxFreeDaysInARow(string date, string countryCode)
+        public async Task<dynamic> MaxFreeDaysInARow(string year, string countryCode)
         {
             dynamic maxFreeDaysInARow = new JObject();
 
-            string expr = @"\d{4}";
-            MatchCollection mc = Regex.Matches(date, expr);
-            //string year = Convert.ToString(mc[0]);
-            int year = Convert.ToInt32(Convert.ToString(mc[0]));
-            // System.Diagnostics.Debug.WriteLine(year);
+            SqlConnection cnn;
+            cnn = new SqlConnection(connectionString);
+            cnn.Open();
 
-            //get all holidays
-            HolidaysController holidaysController = new HolidaysController();
-            dynamic holidays = await holidaysController
-                 .GetJsonOnNet("https://kayaposoft.com/enrico/json/v2.0/?action=getHolidaysForYear&year=" + year.ToString() + "&country=" + countryCode + "&holidayType=public_holiday");
-            //dynamic holidays = await EveryMonthHolidays(countryCode, year);
+            SqlCommand command = new SqlCommand($"SELECT Streak FROM [dbo].[DaysInARow] WHERE Country='{countryCode}' AND YearOfHolidays='{year}';", cnn);
 
-            int holidayStreak;
-            maxFreeDaysInARow.longestFreeDayStreak = 0;
 
-            //check free days around holidays
-            foreach (var holiday in holidays)
+            using (SqlDataReader reader = command.ExecuteReader())
             {
-                int day = holiday["date"]["day"];
-                int month = holiday["date"]["month"];
-                int year_ = holiday["date"]["year"];
+                dynamic countryList = new JObject();
+                countryList.countries = new JArray();
 
-                string fullDate = $"{day}-{month}-{year_}";
-                System.Diagnostics.Debug.WriteLine(fullDate);
-
-                holidayStreak = -1;
-
-                //request self api UNFINISHED *******************************************************************************
-                // dynamic jsonobj = await holidaysController
-                //.GetJsonOnNet("api/holidays/daystatus/" + day + "-" + month + "-" + year + "/" + countryCode);
-                
-                dynamic jsonobj = await DayStatus(date, countryCode);
-                DateTime holidayDate = new DateTime(year_, month, day);
-                string dateStatus = jsonobj["dayStatus"];
-
-                while (!dateStatus.Equals("workday"))
+                //if there is data in table, get free Day Streak from DB
+                if (reader.Read() == true)
                 {
-                    holidayStreak++;
-                    holidayDate = holidayDate.AddDays(1);
-                    int year2 = holidayDate.Year;
-                    int month2 = holidayDate.Month;
-                    int day2 = holidayDate.Day;
-                    string date2 = $"{day2}-{month2}-{year2}";
-                    jsonobj = await DayStatus(date2, countryCode);
-                    dateStatus = jsonobj["dayStatus"];
-                    //jsonobj = await holidaysController
-                    //    .GetJsonOnNet(url);
-                }
-
-                //reset
-                holidayDate = new DateTime(year_, month, day);
-                dateStatus = "holiday";
-
-                while (!dateStatus.Equals("workday"))
+                    maxFreeDaysInARow.longestFreeDayStreak  = reader.GetValue(0);
+                    return maxFreeDaysInARow;
+                }//call external api and save data to DB
+                else
                 {
-                    holidayStreak++;
-                    holidayDate = holidayDate.AddDays(-1);
-                    int year2 = holidayDate.Year;
-                    int month2 = holidayDate.Month;
-                    int day2 = holidayDate.Day;
-                    string date2 = $"{day2}-{month2}-{year2}";
-                    jsonobj = await DayStatus(date2, countryCode);
-                    dateStatus = jsonobj["dayStatus"];
-                }
+                    HolidaysController holidaysController = new HolidaysController();
+                    dynamic holidays = await holidaysController
+                         .GetJsonOnNet("https://kayaposoft.com/enrico/json/v2.0/?action=getHolidaysForYear&year=" + year + "&country=" + countryCode + "&holidayType=public_holiday");
 
-                if (holidayStreak > Convert.ToInt16(maxFreeDaysInARow.longestFreeDayStreak))
-                {
-                    maxFreeDaysInARow.longestFreeDayStreak = holidayStreak;
+                    int holidayStreak;
+                    maxFreeDaysInARow.longestFreeDayStreak = 0;
+
+                    //check free days around holidays
+                    foreach (var holiday in holidays)
+                    {
+                        int day = holiday["date"]["day"];
+                        int month = holiday["date"]["month"];
+                        int year_ = holiday["date"]["year"];
+
+                        string fullDate = $"{day}-{month}-{year_}";
+
+                        holidayStreak = -1;
+
+                        dynamic jsonobj = await DayStatus(fullDate, countryCode);
+                        DateTime holidayDate = new DateTime(year_, month, day);
+                        string dateStatus = jsonobj["dayStatus"];
+
+                        while (!dateStatus.Equals("workday"))
+                        {
+                            holidayStreak++;
+                            holidayDate = holidayDate.AddDays(1);
+                            int year2 = holidayDate.Year;
+                            int month2 = holidayDate.Month;
+                            int day2 = holidayDate.Day;
+                            string date2 = $"{day2}-{month2}-{year2}";
+                            jsonobj = await DayStatus(date2, countryCode);
+                            dateStatus = jsonobj["dayStatus"];
+                        }
+
+                        //reset
+                        holidayDate = new DateTime(year_, month, day);
+                        dateStatus = "holiday";
+
+                        while (!dateStatus.Equals("workday"))
+                        {
+                            holidayStreak++;
+                            holidayDate = holidayDate.AddDays(-1);
+                            int year2 = holidayDate.Year;
+                            int month2 = holidayDate.Month;
+                            int day2 = holidayDate.Day;
+                            string date2 = $"{day2}-{month2}-{year2}";
+                            jsonobj = await DayStatus(date2, countryCode);
+                            dateStatus = jsonobj["dayStatus"];
+                        }
+
+                        if (holidayStreak > Convert.ToInt16(maxFreeDaysInARow.longestFreeDayStreak))
+                        {
+                            maxFreeDaysInARow.longestFreeDayStreak = holidayStreak;
+                        }
+                    }
+                    SqlConnection cnn2;
+                    cnn2 = new SqlConnection(connectionString);
+                    cnn2.Open();
+
+                    string sqlStr = $"INSERT INTO [dbo].[DaysInARow] ( Country, YearOfHolidays, Streak) VALUES('{countryCode}', '{year}', '{ maxFreeDaysInARow.longestFreeDayStreak}');";
+                    SqlCommand command2 = new SqlCommand(sqlStr, cnn2);
+                    int result = command2.ExecuteNonQuery();
+                    cnn2.Close();
+
+                    return maxFreeDaysInARow;
                 }
             }
-
-            return maxFreeDaysInARow;
         }
 
-            // GET: api/Holidays
-            public IEnumerable<string> Get()
-        {
-            return new string[] { "value1", "value2" };
-        }
-
-        // GET: api/Holidays/5
-        public string Get(int id)
-        {
-            return "value";
-        }
-
-        // POST: api/Holidays
-        public void Post([FromBody]string value)
-        {
-        }
-
-        // PUT: api/Holidays/5
-        public void Put(int id, [FromBody]string value)
-        {
-        }
-
-        // DELETE: api/Holidays/5
-        public void Delete(int id)
-        {
-        }
     }
 }
