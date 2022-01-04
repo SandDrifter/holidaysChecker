@@ -48,10 +48,10 @@ namespace DemoAPI.Controllers
                 //if there is data in table, get countries from DB
                 if (reader.Read() == true)
                 {
-                    while (reader.Read())
+                    do
                     {
                         countryList.countries.Add(new JArray(reader.GetValue(0).ToString(), reader.GetValue(1).ToString()));
-                    }
+                    } while (reader.Read()) ;
                 }//if table is empty insert data into table
                 else {
 
